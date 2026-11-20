@@ -1,0 +1,119 @@
+---
+- name: Pastikan user deploy ada {{ app_deploy_user }}
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ app_deploy_user }}"
+
+- name: Home user deploy
+  ansible.builtin.set_fact:
+    app_deploy_home: "{{ ansible_facts['getent_passwd'][app_deploy_user][4] }}"
+
+- name: User deploy masuk grup docker
+  ansible.builtin.user:
+    name: "{{ app_deploy_user }}"
+    groups: docker
+    append: true
+
+# ------------------------------------------------------------------ SSH dari Jenkins
+- name: Ambil public key SSH user jenkins
+  ansible.builtin.slurp:
+    src: "{{ app_jenkins_pubkey_path }}"
+  delegate_to: "{{ groups['jenkins'][0] }}"
+  register: app_jenkins_pubkey
+  failed_when: false
+  run_once: true
+  when:
+    - app_authorize_jenkins_key
+    - groups['jenkins'] | default([]) | length > 0
+
+- name: Gabungkan daftar public key
+  ansible.builtin.set_fact:
+    app_all_pubkeys: >-
+      {{ app_authorized_keys
+         + ([app_jenkins_pubkey.content | b64decode | trim] if (app_jenkins_pubkey.content | default('')) | length > 0 else []) }}
+
+- name: Peringatan public key Jenkins tidak ditemukan
+  ansible.builtin.debug:
+    msg: >-
+      Public key Jenkins ({{ app_jenkins_pubkey_path }}) tidak ditemukan. Jalankan playbooks/jenkins.yml dulu,
+      atau isi app_authorized_keys secara manual.
+  when:
+    - app_authorize_jenkins_key
+    - (app_jenkins_pubkey.content | default('')) | length == 0
+
+- name: Folder .ssh user deploy
+  ansible.builtin.file:
+    path: "{{ app_deploy_home }}/.ssh"
+    state: directory
+    owner: "{{ app_deploy_user }}"
+    group: "{{ app_deploy_user }}"
+    mode: "0700"
+  when: app_all_pubkeys | length > 0
+
+- name: Daftarkan public key ke authorized_keys
+  ansible.builtin.lineinfile:
+    path: "{{ app_deploy_home }}/.ssh/authorized_keys"
+    line: "{{ item }}"
+    create: true
+    owner: "{{ app_deploy_user }}"
+    group: "{{ app_deploy_user }}"
+    mode: "0600"
+  loop: "{{ app_all_pubkeys }}"
+  loop_control:
+    label: "{{ item.split(' ')[-1] }}"
+
+# ------------------------------------------------------------------ Folder stack
+- name: Folder dasar aplikasi {{ app_base_dir }}
+  ansible.builtin.file:
+    path: "{{ app_base_dir }}"
+    state: directory
+    owner: "{{ app_deploy_user }}"
+    group: "{{ app_deploy_user }}"
+    mode: "0755"
+
+- name: Folder stack
+  ansible.builtin.file:
+    path: "{{ app_base_dir }}/{{ item.0.name }}{{ item.1 }}"
+    state: directory
+    owner: "{{ app_deploy_user }}"
+    group: "{{ app_deploy_user }}"
+    mode: "0750"
+  loop: "{{ app_stacks | product(['', '/.release']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}{{ item.1 }}"
+
+- name: Cek .env stack yang sudah ada
+  ansible.builtin.stat:
+    path: "{{ app_base_dir }}/{{ item.name }}/.env"
+  loop: "{{ app_stacks }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: app_env_stat
+
+# Template hanya dirender bila .env belum ada (atau app_env_overwrite=true),
+# jadi secret yang sudah dipakai produksi tidak pernah tertimpa.
+- name: Buat .env stack
+  ansible.builtin.template:
+    src: stack.env.j2
+    dest: "{{ app_base_dir }}/{{ app_env_item.item.name }}/.env"
+    owner: "{{ app_deploy_user }}"
+    group: "{{ app_deploy_user }}"
+    mode: "0600"
+  vars:
+    stack: "{{ app_env_item.item }}"
+  loop: "{{ app_env_stat.results }}"
+  loop_control:
+    loop_var: app_env_item
+    label: "{{ app_env_item.item.name }}"
+  when: app_env_overwrite | bool or not app_env_item.stat.exists
+  no_log: true
+
+- name: Ringkasan stack
+  ansible.builtin.debug:
+    msg: >-
+      {{ app_env_item.item.name }}: {{ app_base_dir }}/{{ app_env_item.item.name }}/.env
+      {{ 'sudah ada — tidak diubah' if (app_env_item.stat.exists and not app_env_overwrite | bool) else 'dibuat' }}
+  loop: "{{ app_env_stat.results }}"
+  loop_control:
+    loop_var: app_env_item
+    label: "{{ app_env_item.item.name }}"

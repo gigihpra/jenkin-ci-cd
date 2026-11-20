@@ -1,0 +1,30 @@
+# Backend Klinik RME — Go 1.24 + PostgreSQL (migrasi Atlas)
+repo: https://github.com/gigihpra/klinik-api.git
+branch: master
+
+ci:
+  image: golang:1.24-alpine
+  env:
+    CGO_ENABLED: "0"
+  steps:
+    - name: vet
+      run: go vet ./...
+    - name: test
+      run: go test ./...
+
+image:
+  name: klinik-api
+
+build:
+  # Repo sudah punya Dockerfile multi-stage (binary api + importer + folder db/).
+  dockerfile: Dockerfile
+
+deploy:
+  stack: klinik
+  service: api
+  image_var: API_IMAGE
+  health:
+    # /healthz juga mengecek koneksi database.
+    cmd: compose exec -T api wget -qO- http://127.0.0.1:8080/healthz >/dev/null
+    retries: 30
+    interval: 3

@@ -1,0 +1,60 @@
+# Salin file ini menjadi projects/<nama-job>.yml untuk menambah repository baru.
+# Nama file = nama job Jenkins (parameter PROJECT default = nama job).
+# Semua key opsional kecuali `repo` dan `image.name`. Nilai default ada di _defaults.yml.
+
+repo: https://github.com/<org>/<repo>.git
+branch: main
+# git_credentials: github-credentials   # kosongkan ("") untuk repo publik
+
+# --- CI: dijalankan di dalam container, jadi Jenkins tidak perlu install Go/Node/Python -------
+ci:
+  # image default untuk semua step (bisa di-override per step)
+  image: node:22-alpine
+  workdir: .                # relatif terhadap root repo
+  env: {}                   # env tambahan untuk semua step
+  steps:
+    - name: install
+      run: npm ci
+    - name: test
+      run: npm test
+    # contoh step dengan image lain:
+    # - name: go-test
+    #   image: golang:1.24-alpine
+    #   env: { CGO_ENABLED: "0" }
+    #   run: go test ./...
+    # contoh step tanpa image (jalan langsung di host Jenkins):
+    # - name: lint
+    #   image: ""
+    #   run: make lint
+
+# --- Build image --------------------------------------------------------------
+image:
+  name: my-service          # nama repository image (tanpa registry/namespace)
+
+build:
+  context: .                # folder build context (relatif root repo)
+  dockerfile: Dockerfile    # Dockerfile milik repo
+  # template: vue-spa       # ATAU pakai template dari templates/<nama> bila repo tidak punya Dockerfile
+  args: {}                  # --build-arg KEY=VALUE
+  # env_file: .env.production.local   # tulis variabel build-time (VITE_*, REACT_APP_*, dll)
+  # env: { VITE_API_BASE: "" }
+  # target: runtime         # multi-stage target
+  # platform: linux/amd64
+
+# --- Override registry per project (opsional) -----------------------------------
+# registry:
+#   mode: ssh               # tanpa registry
+#   url: ghcr.io
+#   namespace: my-org
+#   credentials: ghcr-credentials
+
+# --- Deploy ---------------------------------------------------------------------
+deploy:
+  stack: my-stack           # folder deploy/stacks/<stack>/ (docker-compose.yml + hooks)
+  service: app              # nama service di docker-compose.yml
+  image_var: APP_IMAGE      # variabel di .env server yang menyimpan image service ini
+  # host: 10.0.0.5          # host literal (jika tidak pakai credential host)
+  # ssh_credentials: other-server-ssh
+  health:
+    # Dijalankan di folder stack di server. Fungsi `compose` = docker compose --env-file .env
+    cmd: compose exec -T app wget -qO- http://127.0.0.1:8080/health >/dev/null

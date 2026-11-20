@@ -1,0 +1,16 @@
+# Salin menjadi inventory/hosts.ini lalu isi IP server.
+#   cp inventory/hosts.ini.example inventory/hosts.ini
+#
+# Jenkins dan aplikasi boleh di server yang SAMA (tulis host yang sama di kedua grup)
+# atau di server terpisah. Tambahkan host lain di [app_servers] untuk deploy ke banyak server.
+
+[jenkins]
+jenkins-01 ansible_host=192.168.1.10 ansible_user=ubuntu
+
+[app_servers]
+klinik-01  ansible_host=192.168.1.20 ansible_user=ubuntu
+
+[all:vars]
+ansible_ssh_private_key_file=~/.ssh/id_ed25519
+ansible_python_interpreter=/usr/bin/python3
+# Bila sudo butuh password: jalankan playbook dengan  -K  (--ask-become-pass)

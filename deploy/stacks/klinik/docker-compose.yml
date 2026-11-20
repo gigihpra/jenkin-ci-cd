@@ -1,0 +1,92 @@
+# Stack produksi Klinik RME: PostgreSQL + migrasi Atlas + API (Go) + Web (Vue/nginx)
+# Lokasi di server: /opt/apps/klinik/  (variabel dibaca dari .env di folder yang sama)
+#
+# API_IMAGE / WEB_IMAGE diisi otomatis oleh deploy.sh setiap kali Jenkins deploy.
+name: klinik
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-klinik}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib diisi di .env}
+      POSTGRES_DB: ${POSTGRES_DB:-klinik}
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Hanya bind ke 127.0.0.1 server (untuk backup / psql dari host), tidak terbuka ke jaringan.
+    ports:
+      - "127.0.0.1:${DB_BIND_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  # Dijalankan oleh hooks/pre-deploy.sh setiap deploy API:  compose --profile tools run --rm migrate
+  # Folder ./db diekstrak dari image API (berisi migrations + atlas.sum + seed).
+  migrate:
+    image: ${ATLAS_IMAGE:-arigaio/atlas:1.4.0}
+    profiles: ["tools"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./db:/db:ro
+    command:
+      - migrate
+      - apply
+      - --dir
+      - file:///db/migrations
+      - --url
+      - postgres://${POSTGRES_USER:-klinik}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-klinik}?sslmode=disable
+
+  api:
+    image: ${API_IMAGE:-klinik-api:not-deployed}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      APP_NAME: ${APP_NAME:-Klinik RME}
+      PORT: "8080"
+      TZ: ${TZ:-Asia/Jakarta}
+      LOG_JSON: ${LOG_JSON:-true}
+      DATABASE_URL: postgres://${POSTGRES_USER:-klinik}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-klinik}?sslmode=disable
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-16}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET wajib diisi di .env (min 32 karakter)}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-168h}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      TRUST_PROXY: "true"
+      RATE_LIMIT_RPM: ${RATE_LIMIT_RPM:-600}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      UPLOAD_DIR: /app/storage/uploads
+    volumes:
+      - uploads:/app/storage/uploads
+    logging: *logging
+
+  web:
+    image: ${WEB_IMAGE:-klinik-app:not-deployed}
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: api:8080
+      NGINX_MAX_BODY: ${NGINX_MAX_BODY:-20m}
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-80}:80"
+    logging: *logging
+
+volumes:
+  pgdata:
+  uploads:

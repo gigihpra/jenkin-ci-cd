@@ -1,0 +1,15 @@
+# Contoh stack minimal untuk repository baru. Salin folder ini menjadi
+# deploy/stacks/<nama-stack>/ lalu sesuaikan. Hook opsional: hooks/pre-deploy.sh, hooks/post-deploy.sh
+name: example
+
+services:
+  app:
+    # Variabel ini (image_var di projects/<nama>.yml) diisi deploy.sh
+    image: ${APP_IMAGE:-example:not-deployed}
+    restart: unless-stopped
+    env_file: [app.env]          # opsional: env aplikasi terpisah (buat di server)
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }

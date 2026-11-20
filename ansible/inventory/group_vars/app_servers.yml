@@ -1,0 +1,32 @@
+# Server aplikasi (tujuan deploy).
+
+app_base_dir: /opt/apps
+app_deploy_user: "{{ ansible_user | default('ubuntu') }}"
+
+# Daftarkan public key SSH user jenkins (dari host grup [jenkins]) ke authorized_keys deploy user.
+app_authorize_jenkins_key: true
+# Public key tambahan (opsional)
+app_authorized_keys: []
+
+# true = timpa .env yang sudah ada di server (HATI-HATI: secret ikut berganti). Default: hanya buat bila belum ada.
+app_env_overwrite: false
+
+# Secret dibuat acak SEKALI dan disimpan di ansible/credentials/<host>/ (di-gitignore).
+# Bisa juga diganti dengan ansible-vault:  POSTGRES_PASSWORD: "{{ vault_klinik_db_password }}"
+_cred_dir: "{{ playbook_dir }}/../credentials/{{ inventory_hostname }}"
+
+# Satu entri = satu folder <app_base_dir>/<name>/ berisi .env. File compose & hook dikirim Jenkins.
+app_stacks:
+  - name: klinik
+    env:
+      POSTGRES_USER: klinik
+      POSTGRES_DB: klinik
+      POSTGRES_PASSWORD: "{{ lookup('ansible.builtin.password', _cred_dir + '/klinik_postgres_password chars=ascii_lowercase,digits length=32') }}"
+      JWT_SECRET: "{{ lookup('ansible.builtin.password', _cred_dir + '/klinik_jwt_secret chars=ascii_letters,digits length=64') }}"
+      APP_NAME: Klinik RME
+      TZ: Asia/Jakarta
+      CORS_ORIGINS: "http://{{ ansible_host | default(inventory_hostname) }}"
+      COOKIE_SECURE: "false"
+      WEB_PORT: "80"
+      API_IMAGE: ""
+      WEB_IMAGE: ""

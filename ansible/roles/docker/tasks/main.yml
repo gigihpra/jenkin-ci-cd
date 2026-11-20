@@ -1,0 +1,148 @@
+---
+# Prinsip: bila Docker / Compose / Buildx sudah ada, JANGAN install ulang
+# (menghindari bentrok docker.io vs docker-ce di server yang sudah jalan).
+
+- name: Cek Docker Engine
+  ansible.builtin.command: docker --version
+  register: docker_engine_check
+  changed_when: false
+  failed_when: false
+
+- name: Cek Docker Compose plugin
+  ansible.builtin.command: docker compose version
+  register: docker_compose_check
+  changed_when: false
+  failed_when: false
+
+- name: Cek Docker Buildx plugin
+  ansible.builtin.command: docker buildx version
+  register: docker_buildx_check
+  changed_when: false
+  failed_when: false
+
+- name: Status Docker yang terdeteksi
+  ansible.builtin.debug:
+    msg:
+      - "engine : {{ docker_engine_check.stdout if docker_engine_check.rc == 0 else 'BELUM ADA → akan di-install' }}"
+      - "compose: {{ docker_compose_check.stdout if docker_compose_check.rc == 0 else 'BELUM ADA → akan di-install' }}"
+      - "buildx : {{ docker_buildx_check.stdout if docker_buildx_check.rc == 0 else 'BELUM ADA → akan di-install' }}"
+
+# ------------------------------------------------------------------ install baru
+- name: Install Docker dari repo resmi
+  when:
+    - docker_engine_check.rc != 0
+    - docker_install_method == 'official'
+  block:
+    - name: Folder keyring apt
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Kunci GPG repo Docker
+      ansible.builtin.get_url:
+        url: "https://download.docker.com/linux/{{ docker_repo_distro }}/gpg"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Repo apt Docker
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/docker.list
+        mode: "0644"
+        content: >
+          deb [arch={{ {'x86_64': 'amd64', 'aarch64': 'arm64', 'armv7l': 'armhf'}.get(ansible_facts['architecture'], ansible_facts['architecture']) }}
+          signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/{{ docker_repo_distro }} {{ docker_repo_release }} stable
+
+    - name: Install docker-ce, compose & buildx plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+- name: Install Docker dari repo distro
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+      - docker-buildx
+    state: present
+    update_cache: true
+  when:
+    - docker_engine_check.rc != 0
+    - docker_install_method == 'distro'
+
+# ------------------------------------------- docker sudah ada, plugin ada yang kurang
+- name: Lengkapi plugin yang kurang pada Docker yang sudah ada
+  when:
+    - docker_engine_check.rc == 0
+    - docker_compose_check.rc != 0 or docker_buildx_check.rc != 0
+  block:
+    - name: Cek sumber paket Docker
+      ansible.builtin.package_facts:
+        manager: apt
+
+    - name: Tentukan nama paket plugin sesuai sumber Docker
+      ansible.builtin.set_fact:
+        docker_from_ce: "{{ 'docker-ce' in ansible_facts['packages'] }}"
+
+    - name: Install plugin compose
+      ansible.builtin.apt:
+        name: "{{ 'docker-compose-plugin' if docker_from_ce else 'docker-compose-v2' }}"
+        state: present
+        update_cache: true
+      when: docker_compose_check.rc != 0
+
+    - name: Install plugin buildx
+      ansible.builtin.apt:
+        name: "{{ 'docker-buildx-plugin' if docker_from_ce else 'docker-buildx' }}"
+        state: present
+        update_cache: true
+      when: docker_buildx_check.rc != 0
+      failed_when: false   # buildx opsional (builder lama tetap jalan)
+
+# ------------------------------------------------------------------ konfigurasi
+- name: Konfigurasi daemon Docker (hanya bila belum ada daemon.json)
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: "{{ docker_daemon_config | to_nice_json }}\n"
+    mode: "0644"
+    force: false
+  when: docker_daemon_config | length > 0
+  notify: Restart docker
+
+- name: Docker aktif & otomatis jalan saat boot
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Cek user yang akan dimasukkan ke grup docker
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item }}"
+  loop: "{{ docker_users }}"
+  register: docker_user_lookup
+  failed_when: false
+
+- name: Tambahkan user ke grup docker
+  ansible.builtin.user:
+    name: "{{ item.item }}"
+    groups: docker
+    append: true
+  loop: "{{ docker_user_lookup.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: item.ansible_facts is defined and item.ansible_facts.getent_passwd is defined
+
+- name: Terapkan handler docker sekarang
+  ansible.builtin.meta: flush_handlers
+
+- name: Verifikasi docker compose
+  ansible.builtin.command: docker compose version
+  changed_when: false

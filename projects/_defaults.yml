@@ -1,0 +1,33 @@
+# Nilai default untuk SEMUA project. File projects/<nama>.yml di-merge (deep merge)
+# di atas file ini, jadi cukup tulis yang berbeda saja.
+
+branch: master
+
+# Credential Jenkins (Username + Password / token) untuk repo private. Kosongkan bila repo publik.
+git_credentials: github-credentials
+
+registry:
+  # registry : build → push ke registry → server pull (Docker Hub / GHCR / registry sendiri)
+  # ssh      : tanpa registry; image di-stream langsung ke server (docker save | ssh docker load)
+  mode: registry
+  url: docker.io
+  # Namespace/organisasi. Kosong = memakai username dari credential registry.
+  namespace: ""
+  credentials: dockerhub-credentials
+  push_latest: false
+
+deploy:
+  enabled: true
+  # Credential "SSH Username with private key" untuk login ke server aplikasi.
+  ssh_credentials: app-server-ssh
+  # Host server: isi literal di sini ATAU simpan sebagai credential "Secret text".
+  host: ""
+  host_credentials: app-server-host
+  ssh_port: 22
+  # Folder stack di server: <base_dir>/<stack>
+  base_dir: /opt/apps
+  # Kembalikan image sebelumnya bila migrasi/health check gagal.
+  rollback: true
+  health:
+    retries: 30
+    interval: 5

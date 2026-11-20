@@ -1,0 +1,30 @@
+---
+jenkins_home: /var/lib/jenkins
+jenkins_war: /usr/share/java/jenkins.war
+jenkins_http_port: 8080
+jenkins_start_timeout: 600
+
+# Java: di-install HANYA bila java belum ada atau versinya < minimum.
+jenkins_java_min_version: 21
+jenkins_java_package: openjdk-21-jre-headless
+
+# Repo Jenkins LTS (kunci diperbarui berkala oleh proyek Jenkins — ganti bila apt menolak NO_PUBKEY).
+jenkins_repo_url: https://pkg.jenkins.io/debian-stable
+jenkins_repo_key_url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+jenkins_install_plugins: true
+jenkins_plugin_manager_version: "2.16.0"
+jenkins_plugin_manager_base: https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download
+jenkins_plugin_manager_jar: "jenkins-plugin-manager-{{ jenkins_plugin_manager_version }}.jar"
+jenkins_plugin_manager_url: "{{ jenkins_plugin_manager_base }}/{{ jenkins_plugin_manager_version }}/{{ jenkins_plugin_manager_jar }}"
+jenkins_plugins:
+  - workflow-aggregator
+  - git
+  - credentials-binding
+  - ssh-credentials
+  - plain-credentials
+  - pipeline-utility-steps
+  - timestamper
+
+jenkins_generate_ssh_key: true
+jenkins_ssh_key_type: ed25519

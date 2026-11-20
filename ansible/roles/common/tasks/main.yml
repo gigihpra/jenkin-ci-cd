@@ -1,0 +1,42 @@
+---
+- name: Pastikan OS keluarga Debian/Ubuntu
+  ansible.builtin.assert:
+    that: ansible_facts['os_family'] == 'Debian'
+    fail_msg: "Playbook ini mendukung Ubuntu/Debian. Terdeteksi: {{ ansible_facts['distribution'] }}"
+    quiet: true
+
+- name: Kumpulkan daftar paket terpasang
+  ansible.builtin.package_facts:
+    manager: apt
+
+- name: Tentukan paket dasar yang belum terpasang
+  ansible.builtin.set_fact:
+    common_missing_packages: "{{ common_packages | reject('in', ansible_facts['packages']) | list }}"
+
+- name: Paket dasar sudah lengkap
+  ansible.builtin.debug:
+    msg: "Semua paket dasar sudah terpasang — dilewati."
+  when: common_missing_packages | length == 0
+
+- name: Install paket dasar yang belum ada
+  ansible.builtin.apt:
+    name: "{{ common_missing_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: common_missing_packages | length > 0
+
+- name: Baca timezone saat ini
+  ansible.builtin.command: timedatectl show -p Timezone --value
+  register: common_tz
+  changed_when: false
+  failed_when: false
+  when: common_timezone | length > 0
+
+- name: Set timezone {{ common_timezone }}
+  ansible.builtin.command: timedatectl set-timezone {{ common_timezone }}
+  changed_when: true
+  when:
+    - common_timezone | length > 0
+    - common_tz.rc | default(1) == 0
+    - common_tz.stdout | trim != common_timezone

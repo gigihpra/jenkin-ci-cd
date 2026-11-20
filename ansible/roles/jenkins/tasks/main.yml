@@ -1,0 +1,199 @@
+---
+# ------------------------------------------------------------------ Java
+- name: Cek versi Java
+  ansible.builtin.command: java -version
+  register: jenkins_java_check
+  changed_when: false
+  failed_when: false
+
+- name: Hitung versi mayor Java terpasang
+  ansible.builtin.set_fact:
+    jenkins_java_major: >-
+      {{ (jenkins_java_check.stderr | default('')
+          | regex_search('version "([0-9]+)', '\1') | default(['0'], true) | first) | int }}
+
+- name: Status Java
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'Java ' ~ jenkins_java_major ~ ' sudah terpasang — dilewati.'
+         if jenkins_java_major | int >= jenkins_java_min_version | int
+         else 'Java belum ada / versi ' ~ jenkins_java_major ~ ' < ' ~ jenkins_java_min_version ~ ' → install ' ~ jenkins_java_package }}
+
+- name: Install Java
+  ansible.builtin.apt:
+    name:
+      - "{{ jenkins_java_package }}"
+      - fontconfig
+    state: present
+    update_cache: true
+  when: jenkins_java_major | int < jenkins_java_min_version | int
+
+# ------------------------------------------------------------------ Jenkins
+- name: Cek Jenkins terpasang
+  ansible.builtin.stat:
+    path: "{{ jenkins_war }}"
+  register: jenkins_war_stat
+
+- name: Status Jenkins
+  ansible.builtin.debug:
+    msg: "{{ 'Jenkins sudah terpasang — instalasi dilewati.' if jenkins_war_stat.stat.exists else 'Jenkins belum ada → install Jenkins LTS' }}"
+
+- name: Install Jenkins LTS
+  when: not jenkins_war_stat.stat.exists
+  block:
+    - name: Folder keyring apt
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Kunci repo Jenkins
+      ansible.builtin.get_url:
+        url: "{{ jenkins_repo_key_url }}"
+        dest: /etc/apt/keyrings/jenkins-keyring.asc
+        mode: "0644"
+        force: true
+
+    - name: Repo apt Jenkins
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/jenkins.list
+        mode: "0644"
+        content: "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc] {{ jenkins_repo_url }} binary/\n"
+
+    - name: Install paket jenkins
+      ansible.builtin.apt:
+        name: jenkins
+        state: present
+        update_cache: true
+
+- name: Folder systemd override Jenkins
+  ansible.builtin.file:
+    path: /etc/systemd/system/jenkins.service.d
+    state: directory
+    mode: "0755"
+
+# Start pertama Jenkins (+ plugin) bisa > 90 detik di server kecil → perpanjang timeout systemd.
+- name: Systemd override Jenkins (port & timeout start)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/jenkins.service.d/override.conf
+    mode: "0644"
+    content: |
+      [Service]
+      Environment="JENKINS_PORT={{ jenkins_http_port }}"
+      TimeoutStartSec={{ jenkins_start_timeout }}
+  notify:
+    - Reload systemd
+    - Restart jenkins
+
+- name: User jenkins masuk grup docker (build image)
+  ansible.builtin.user:
+    name: jenkins
+    groups: docker
+    append: true
+  notify: Restart jenkins
+
+# ------------------------------------------------------------------ Plugin
+- name: Cek plugin yang sudah terpasang
+  ansible.builtin.find:
+    paths: "{{ jenkins_home }}/plugins"
+    patterns: ["*.jpi", "*.hpi"]
+    file_type: file
+  register: jenkins_plugin_files
+  when: jenkins_install_plugins
+
+- name: Tentukan plugin yang belum ada
+  ansible.builtin.set_fact:
+    jenkins_missing_plugins: >-
+      {{ jenkins_plugins | difference(
+           jenkins_plugin_files.files | default([]) | map(attribute='path') | map('basename')
+           | map('regex_replace', '\.(jpi|hpi)$', '') | list) }}
+  when: jenkins_install_plugins
+
+- name: Install plugin Jenkins yang belum ada
+  when:
+    - jenkins_install_plugins
+    - jenkins_missing_plugins | length > 0
+  block:
+    - name: Folder plugin manager
+      ansible.builtin.file:
+        path: /opt/jenkins-plugin-manager
+        state: directory
+        mode: "0755"
+
+    - name: Download jenkins-plugin-manager
+      ansible.builtin.get_url:
+        url: "{{ jenkins_plugin_manager_url }}"
+        dest: "/opt/jenkins-plugin-manager/jenkins-plugin-manager-{{ jenkins_plugin_manager_version }}.jar"
+        mode: "0644"
+
+    - name: Folder plugin Jenkins
+      ansible.builtin.file:
+        path: "{{ jenkins_home }}/plugins"
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: "0755"
+
+    - name: Install plugin {{ jenkins_missing_plugins | join(', ') }}
+      ansible.builtin.command:
+        argv: "{{ ['java', '-jar', '/opt/jenkins-plugin-manager/jenkins-plugin-manager-' ~ jenkins_plugin_manager_version ~ '.jar',
+                   '--war', jenkins_war,
+                   '--plugin-download-directory', jenkins_home ~ '/plugins',
+                   '--plugins'] + jenkins_missing_plugins }}"
+      become: true
+      become_user: jenkins
+      changed_when: true
+      notify: Restart jenkins
+
+# ------------------------------------------------------------------ SSH key deploy
+- name: Folder .ssh jenkins
+  ansible.builtin.file:
+    path: "{{ jenkins_home }}/.ssh"
+    state: directory
+    owner: jenkins
+    group: jenkins
+    mode: "0700"
+  when: jenkins_generate_ssh_key
+
+- name: SSH key user jenkins (hanya bila belum ada)
+  ansible.builtin.command:
+    cmd: ssh-keygen -t {{ jenkins_ssh_key_type }} -N "" -C "jenkins-deploy@{{ inventory_hostname }}" -f {{ jenkins_home }}/.ssh/id_{{ jenkins_ssh_key_type }}
+    creates: "{{ jenkins_home }}/.ssh/id_{{ jenkins_ssh_key_type }}"
+  become: true
+  become_user: jenkins
+  when: jenkins_generate_ssh_key
+
+# ------------------------------------------------------------------ Service
+- name: Jenkins aktif & otomatis jalan saat boot
+  ansible.builtin.service:
+    name: jenkins
+    state: started
+    enabled: true
+
+- name: Terapkan restart Jenkins bila ada perubahan
+  ansible.builtin.meta: flush_handlers
+
+- name: Tunggu Jenkins siap di port {{ jenkins_http_port }}
+  ansible.builtin.wait_for:
+    port: "{{ jenkins_http_port | int }}"
+    timeout: 180
+
+- name: Cek password admin awal
+  ansible.builtin.stat:
+    path: "{{ jenkins_home }}/secrets/initialAdminPassword"
+  register: jenkins_initial_pw_file
+
+- name: Baca password admin awal
+  ansible.builtin.slurp:
+    src: "{{ jenkins_home }}/secrets/initialAdminPassword"
+  register: jenkins_initial_pw
+  when: jenkins_initial_pw_file.stat.exists
+
+- name: Info akses Jenkins
+  ansible.builtin.debug:
+    msg:
+      - "Jenkins: http://{{ ansible_host | default(inventory_hostname) }}:{{ jenkins_http_port }}"
+      - >-
+        {{ 'Password admin awal: ' ~ (jenkins_initial_pw.content | b64decode | trim)
+           if jenkins_initial_pw_file.stat.exists else 'Setup awal Jenkins sudah selesai.' }}
+      - "Private key deploy (isi ke credential app-server-ssh): sudo cat {{ jenkins_home }}/.ssh/id_{{ jenkins_ssh_key_type }}"

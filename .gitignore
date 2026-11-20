@@ -1,0 +1,14 @@
+# workspace Jenkins
+/src/
+/.ci/
+
+# Ansible: inventory asli & secret yang di-generate
+ansible/inventory/hosts.ini
+ansible/credentials/
+*.retry
+
+# secret
+.env
+!.env.example
+*.pem
+*.key

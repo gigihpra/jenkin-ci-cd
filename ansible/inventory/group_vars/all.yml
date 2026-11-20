@@ -1,0 +1,31 @@
+# Variabel untuk semua server.
+
+common_timezone: Asia/Jakarta
+
+# Paket dasar. Hanya paket yang BELUM terpasang yang di-install.
+common_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - tar
+  - gzip
+  - unzip
+  - jq
+  - acl
+  - util-linux   # flock (lock deploy)
+  - python3
+
+# Docker: lewati instalasi bila `docker` sudah ada. Metode untuk server baru:
+#   official → repo resmi download.docker.com (docker-ce + compose + buildx plugin)
+#   distro   → paket bawaan Ubuntu (docker.io + docker-compose-v2)
+docker_install_method: official
+# User yang dimasukkan ke grup docker (jenkins ditambahkan otomatis oleh role jenkins)
+docker_users:
+  - "{{ ansible_user | default('ubuntu') }}"
+# Rotasi log container (hanya dibuat bila /etc/docker/daemon.json belum ada)
+docker_daemon_config:
+  log-driver: json-file
+  log-opts:
+    max-size: "20m"
+    max-file: "5"

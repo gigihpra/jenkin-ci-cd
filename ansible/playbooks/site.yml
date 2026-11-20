@@ -1,0 +1,11 @@
+---
+# Semua server sekaligus:
+#   ansible-playbook playbooks/site.yml
+# Atau per bagian:
+#   ansible-playbook playbooks/jenkins.yml
+#   ansible-playbook playbooks/app-servers.yml
+- name: Jenkins
+  ansible.builtin.import_playbook: jenkins.yml
+
+- name: App servers
+  ansible.builtin.import_playbook: app-servers.yml

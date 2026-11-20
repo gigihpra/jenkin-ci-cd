@@ -1,0 +1,10 @@
+---
+app_base_dir: /opt/apps
+app_deploy_user: "{{ ansible_user | default('ubuntu') }}"
+app_authorize_jenkins_key: true
+app_jenkins_pubkey_path: /var/lib/jenkins/.ssh/id_ed25519.pub
+app_authorized_keys: []
+app_env_overwrite: false
+# - name: <stack>
+#   env: { KEY: value }
+app_stacks: []

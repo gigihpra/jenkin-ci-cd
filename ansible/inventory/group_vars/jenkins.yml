@@ -1,0 +1,21 @@
+# Server Jenkins (controller sekaligus tempat build image).
+# Go/Node TIDAK perlu dipasang: langkah CI berjalan di dalam container Docker.
+
+jenkins_http_port: 8080
+jenkins_java_min_version: 21
+jenkins_java_package: openjdk-21-jre-headless
+
+jenkins_install_plugins: true
+jenkins_plugins:
+  - workflow-aggregator        # Pipeline
+  - git
+  - credentials-binding
+  - ssh-credentials
+  - plain-credentials
+  - pipeline-utility-steps     # readYaml
+  - timestamper
+  - pipeline-stage-view
+  - ws-cleanup
+
+# Buat SSH key untuk user jenkins (dipakai deploy ke app server).
+jenkins_generate_ssh_key: true

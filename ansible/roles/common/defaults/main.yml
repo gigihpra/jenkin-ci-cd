@@ -1,0 +1,9 @@
+---
+common_timezone: ""
+common_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - acl
+  - python3

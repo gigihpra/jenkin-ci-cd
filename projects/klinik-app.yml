@@ -1,0 +1,35 @@
+# Frontend Klinik RME — Vue 3 + Vite, disajikan nginx (proxy /api & /files ke klinik-api)
+repo: https://github.com/gigihpra/klinik-app.git
+branch: master
+
+# Tidak ada step CI terpisah: `npm run build` (vue-tsc type-check + vite build)
+# sudah dijalankan di dalam Docker build. Tambahkan step di sini bila nanti ada test/lint.
+ci:
+  steps: []
+
+image:
+  name: klinik-app
+
+build:
+  # Repo tidak punya Dockerfile → pakai templates/vue-spa (Node build → nginx).
+  template: vue-spa
+  args:
+    NODE_IMAGE: node:22-alpine
+    BUILD_SCRIPT: build
+    DIST_DIR: dist
+  # Ditulis ke .env.production.local sebelum build (dibaca Vite).
+  env_file: .env.production.local
+  env:
+    # Kosong = API satu domain dengan FE (nginx mem-proxy /api & /files) — disarankan,
+    # karena cookie refresh-token bersifat same-site.
+    VITE_API_BASE: ""
+    VITE_APP_NAME: Klinik RME
+
+deploy:
+  stack: klinik
+  service: web
+  image_var: WEB_IMAGE
+  health:
+    cmd: compose exec -T web wget -qO- http://127.0.0.1/nginx-health >/dev/null
+    retries: 20
+    interval: 3

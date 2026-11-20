@@ -1,0 +1,6 @@
+---
+docker_install_method: official      # official | distro
+docker_repo_distro: "{{ ansible_facts['distribution'] | lower }}"            # ubuntu | debian
+docker_repo_release: "{{ ansible_facts['distribution_release'] }}"          # noble, jammy, bookworm, ...
+docker_users: []
+docker_daemon_config: {}

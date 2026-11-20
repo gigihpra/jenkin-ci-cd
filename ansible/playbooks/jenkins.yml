@@ -1,0 +1,8 @@
+---
+- name: Siapkan server Jenkins (Java, Jenkins LTS, Docker, Git, plugin)
+  hosts: jenkins
+  become: true
+  roles:
+    - common
+    - docker
+    - jenkins

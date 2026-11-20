@@ -1,0 +1,60 @@
+# Dirender oleh entrypoint image nginx (envsubst) → /etc/nginx/conf.d/default.conf
+# Hanya variabel yang ada di environment yang diganti; $uri dsb. tetap utuh.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size ${NGINX_MAX_BODY};
+    server_tokens off;
+
+    # DNS internal Docker: backend di-resolve saat request, jadi nginx tetap jalan
+    # walaupun container backend sedang restart / belum ada.
+    resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
+    set $api_upstream ${API_UPSTREAM};
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location = /nginx-health {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Proxy ke backend (path diatur lewat env PROXY_PATHS)
+    location ~ ${PROXY_PATHS} {
+        proxy_pass http://$api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_read_timeout 180s;
+        proxy_send_timeout 180s;
+    }
+
+    # Asset ber-hash dari Vite/CRA: cache lama
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # SPA fallback (vue-router / react-router history mode)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

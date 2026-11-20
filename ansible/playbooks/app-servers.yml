@@ -1,0 +1,8 @@
+---
+- name: Siapkan server aplikasi (Docker, Compose, folder stack, .env)
+  hosts: app_servers
+  become: true
+  roles:
+    - common
+    - docker
+    - app
