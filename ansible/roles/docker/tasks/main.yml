@@ -7,18 +7,21 @@
   register: docker_engine_check
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Cek Docker Compose plugin
   ansible.builtin.command: docker compose version
   register: docker_compose_check
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Cek Docker Buildx plugin
   ansible.builtin.command: docker buildx version
   register: docker_buildx_check
   changed_when: false
   failed_when: false
+  check_mode: false
 
 - name: Status Docker yang terdeteksi
   ansible.builtin.debug:

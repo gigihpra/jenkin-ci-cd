@@ -18,7 +18,7 @@
 - name: Ambil public key SSH user jenkins
   ansible.builtin.slurp:
     src: "{{ app_jenkins_pubkey_path }}"
-  delegate_to: "{{ groups['jenkins'][0] }}"
+  delegate_to: "{{ (groups['jenkins'] | default([inventory_hostname], true))[0] }}"
   register: app_jenkins_pubkey
   failed_when: false
   run_once: true

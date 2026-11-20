@@ -1,0 +1,19 @@
+# Inventory untuk kasus Jenkins SUDAH ada (disetup terpisah) — hanya menyiapkan server aplikasi.
+#   cp inventory/hosts-app-only.ini.example inventory/hosts.ini
+#   ansible-playbook playbooks/app-servers.yml --check --diff   # dry-run dulu
+#   ansible-playbook playbooks/app-servers.yml
+#
+# Tidak ada grup [jenkins] → playbook Jenkins tidak menyentuh apa pun.
+# Public key Jenkins tidak diambil otomatis; credential `app-server-ssh` yang sudah bisa login
+# tetap dipakai. Kalau perlu menambah key, isi app_authorized_keys di bawah.
+
+[app_servers]
+klinik-01 ansible_host=192.168.1.20 ansible_user=ubuntu
+
+[app_servers:vars]
+app_authorize_jenkins_key=false
+# app_authorized_keys=["ssh-ed25519 AAAA... jenkins@server-jenkins"]
+
+[all:vars]
+ansible_ssh_private_key_file=~/.ssh/id_ed25519
+ansible_python_interpreter=/usr/bin/python3

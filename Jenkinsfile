@@ -365,13 +365,17 @@ def withDeployTarget(Map d, Closure body) {
         creds << string(credentialsId: d.host_credentials ?: 'app-server-host', variable: 'DEPLOY_HOST')
     }
     withCredentials(creds) {
-        def host = d.host ?: env.DEPLOY_HOST
-        def port = (d.ssh_port ?: 22).toString()
-        def user = d.user ?: env.SSH_USER
-        withEnv(["DEPLOY_HOST=${host}", "DEPLOY_USER=${user}", "DEPLOY_PORT=${port}"]) {
+        // Host/user dari credential TIDAK diinterpolasi Groovy (tetap jadi variabel shell yang di-mask).
+        // Hanya nilai literal dari config (bukan secret) yang dimasukkan lewat withEnv.
+        def extra = ["DEPLOY_PORT=${(d.ssh_port ?: 22).toString()}"]
+        if (d.host) { extra << "DEPLOY_HOST=${d.host}" }
+        def userVar = d.user ? 'DEPLOY_USER' : 'SSH_USER'
+        if (d.user) { extra << "DEPLOY_USER=${d.user}" }
+        withEnv(extra) {
             def opts = '-o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o BatchMode=yes'
-            def ssh = "ssh -i \"\$SSH_KEY\" -p \"\$DEPLOY_PORT\" ${opts} \"\$DEPLOY_USER@\$DEPLOY_HOST\""
-            body(ssh, "\$DEPLOY_USER@\$DEPLOY_HOST")
+            def target = "\$${userVar}@\$DEPLOY_HOST"
+            def ssh = "ssh -i \"\$SSH_KEY\" -p \"\$DEPLOY_PORT\" ${opts} \"${target}\""
+            body(ssh, target)
         }
     }
 }
